@@ -961,6 +961,22 @@ export async function getCodexAuthStatus(cwd, options = {}) {
   }
 }
 
+export async function readAccountRateLimits(cwd, options = {}) {
+  const availability = getCodexAvailability(cwd);
+  if (!availability.available) {
+    throw new Error(availability.detail);
+  }
+  const client = await CodexAppServerClient.connect(cwd, {
+    env: options.env,
+    reuseExistingBroker: true
+  });
+  try {
+    return await client.request("account/rateLimits/read", undefined);
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
+
 export async function interruptAppServerTurn(cwd, { threadId, turnId }) {
   if (!threadId || !turnId) {
     return {

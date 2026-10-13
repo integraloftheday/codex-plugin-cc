@@ -17,6 +17,7 @@ import {
     importExternalAgentSession,
     interruptAppServerTurn,
     parseStructuredOutput,
+    readAccountRateLimits,
     readOutputSchema,
     runAppServerReview,
     runAppServerTurn
@@ -83,6 +84,7 @@ function printUsage() {
       "  node scripts/codex-companion.mjs transfer [--source <claude-jsonl>] [--json]",
       "  node scripts/codex-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/codex-companion.mjs result [job-id] [--json]",
+      "  node scripts/codex-companion.mjs usage [--json]",
       "  node scripts/codex-companion.mjs cancel [job-id] [--json]"
     ].join("\n")
   );
@@ -1021,6 +1023,90 @@ async function handleCancel(argv) {
   outputCommandResult(payload, renderCancelReport(nextJob), options.json);
 }
 
+function formatDuration(totalSeconds) {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  }
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+}
+
+function formatWindowLabel(minutes) {
+  if (!minutes) {
+    return "Window";
+  }
+  if (minutes % 10080 === 0) {
+    return minutes === 10080 ? "Weekly" : `${minutes / 10080}-week`;
+  }
+  if (minutes % 60 === 0) {
+    return `${minutes / 60}-hour`;
+  }
+  return `${minutes}-minute`;
+}
+
+function renderUsageWindow(window, nowSeconds) {
+  if (!window) {
+    return null;
+  }
+  const label = formatWindowLabel(window.windowDurationMins);
+  if (window.resetsAt == null) {
+    return `${label}: ${window.usedPercent}% used`;
+  }
+  const resetDate = new Date(window.resetsAt * 1000).toLocaleString();
+  const remaining = formatDuration(window.resetsAt - nowSeconds);
+  return `${label}: ${window.usedPercent}% used, resets in ${remaining} (${resetDate})`;
+}
+
+function renderUsage(result) {
+  const nowSeconds = Date.now() / 1000;
+  const snapshots = result.rateLimitsByLimitId ? Object.values(result.rateLimitsByLimitId) : [result.rateLimits];
+  const lines = ["# Codex usage", ""];
+  for (const snapshot of snapshots.filter(Boolean)) {
+    const name = snapshot.limitName ?? snapshot.limitId ?? "codex";
+    lines.push(`## ${name}${snapshot.planType ? ` (${snapshot.planType} plan)` : ""}`);
+    for (const window of [snapshot.primary, snapshot.secondary]) {
+      const line = renderUsageWindow(window, nowSeconds);
+      if (line) {
+        lines.push(`- ${line}`);
+      }
+    }
+    if (snapshot.credits) {
+      lines.push(
+        `- Credits: ${snapshot.credits.unlimited ? "unlimited" : snapshot.credits.hasCredits ? snapshot.credits.balance : "none"}`
+      );
+    }
+    if (snapshot.rateLimitReachedType) {
+      lines.push(`- Limit reached: ${snapshot.rateLimitReachedType}`);
+    }
+    lines.push("");
+  }
+  const resetCredits = result.rateLimitResetCredits;
+  if (resetCredits) {
+    lines.push(`Reset credits available: ${resetCredits.availableCount}`);
+    for (const credit of resetCredits.credits ?? []) {
+      if (credit.status !== "available") {
+        continue;
+      }
+      const expires = credit.expiresAt ? `expires ${new Date(credit.expiresAt * 1000).toLocaleDateString()}` : "no expiry";
+      lines.push(`- ${credit.title ?? credit.resetType} (${expires})`);
+    }
+    lines.push("");
+  }
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+async function handleUsage(argv) {
+  const { options } = parseCommandInput(argv, { booleanOptions: ["json"] });
+  const result = await readAccountRateLimits(process.cwd());
+  outputCommandResult(result, renderUsage(result), options.json);
+}
+
 async function main() {
   const [subcommand, ...argv] = process.argv.slice(2);
   if (!subcommand || subcommand === "help" || subcommand === "--help") {
@@ -1057,6 +1143,9 @@ async function main() {
       break;
     case "task-resume-candidate":
       handleTaskResumeCandidate(argv);
+      break;
+    case "usage":
+      await handleUsage(argv);
       break;
     case "cancel":
       await handleCancel(argv);

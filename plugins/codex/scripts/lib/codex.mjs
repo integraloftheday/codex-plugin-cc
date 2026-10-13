@@ -64,7 +64,9 @@ function buildThreadParams(cwd, options = {}) {
   return {
     cwd,
     model: options.model ?? null,
-    approvalPolicy: options.approvalPolicy ?? "never",
+    // Local patch (per openai/codex-plugin-cc PR #494): write tasks may escalate via the auto reviewer; read-only stays "never".
+    approvalPolicy: options.approvalPolicy ?? ((options.sandbox ?? "read-only") !== "read-only" ? "on-request" : "never"),
+    approvalsReviewer: options.approvalsReviewer ?? ((options.sandbox ?? "read-only") !== "read-only" ? "auto_review" : null),
     sandbox: options.sandbox ?? "read-only",
     serviceName: SERVICE_NAME,
     ephemeral: options.ephemeral ?? true
@@ -77,7 +79,9 @@ function buildResumeParams(threadId, cwd, options = {}) {
     threadId,
     cwd,
     model: options.model ?? null,
-    approvalPolicy: options.approvalPolicy ?? "never",
+    // Local patch (per openai/codex-plugin-cc PR #494): write tasks may escalate via the auto reviewer; read-only stays "never".
+    approvalPolicy: options.approvalPolicy ?? ((options.sandbox ?? "read-only") !== "read-only" ? "on-request" : "never"),
+    approvalsReviewer: options.approvalsReviewer ?? ((options.sandbox ?? "read-only") !== "read-only" ? "auto_review" : null),
     sandbox: options.sandbox ?? "read-only"
   };
 }

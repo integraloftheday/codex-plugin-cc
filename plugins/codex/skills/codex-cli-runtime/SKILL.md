@@ -22,6 +22,7 @@ Execution rules:
 - Leave model unset by default. Add `--model` only when the user explicitly asks for one.
 - Map `spark` to `--model gpt-5.3-codex-spark`.
 - Default to a write-capable Codex run by adding `--write` unless the user explicitly asks for read-only behavior or only wants review, diagnosis, or research without edits.
+- Local patch (see `LOCAL_PATCHES.md`): `--write` tasks can request sandbox escalation, which Codex's `auto_review` reviewer approves. The sandbox hides devices such as `/dev/nvidia*`. If the request needs the GPU, other hardware or blocked git writes, keep the prompt's instruction to request escalated permissions, or add one ("the sandbox hides /dev/nvidia*; request escalated permissions for CUDA commands").
 
 Command selection:
 - Use exactly one `task` invocation per rescue handoff.
